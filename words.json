@@ -1,7 +1,5 @@
-{
-  "words": [
-    ["chair", "stool"],
-    ["spiderman", "superman"],
-    ["book", "pamphlet"]
-  ]
-}
+[
+  ["chair", "stool"],
+  ["spiderman", "superman"],
+  ["book", "pamphlet"]
+]

@@ -1,0 +1,3 @@
+#!/bin/bash
+# runfile for supervise
+node imposter.js > /var/log/imposter/imposter.log 2>&1
