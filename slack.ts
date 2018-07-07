@@ -10,7 +10,7 @@ interface imOpenResponse {
   }
 }
 
-interface postMessageResponse {
+interface chatPostMessageResponse {
   "ok": boolean;
   "channel": string;
 }
@@ -33,9 +33,9 @@ export namespace Slack {
   function slackIMUser(user: string, message: string) {
     fetch(`https://slack.com/api/im.open?token=${token}&user=${user}`)
     .then((resp: any) => resp.json()).then((r: imOpenResponse) => {
-      console.log(`Opened IM connection for user ${user}: ${JSON.stringify(r)}`)
+      // console.log(`Opened IM connection for user ${user}: ${JSON.stringify(r)}`)
       fetch(`https://slack.com/api/chat.postMessage?token=${token}&channel=${r.channel.id}&text=${message}`)
-        .then((resp: Response) => resp.json()).then((r: postMessageResponse) => {
+        .then((resp: Response) => resp.json()).then((r: chatPostMessageResponse) => {
           console.log(`Successfully sent Slack PM to user ${user}: "${message}"`)
         }).catch((error) => { console.log(error); });
     }).catch((error) => { console.log(error); });

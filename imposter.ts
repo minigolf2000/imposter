@@ -17,19 +17,6 @@ interface Game {
   createdAt: number;
 }
 
-// interface SlackRequest {
-//   token: string;
-//   team_id: string;
-//   team_domain: string;
-//   channel_id: string;
-//   channel_name: string;
-//   user_id: string;
-//   user_name: string;
-//   command: string;
-//   text: string;
-//   response_url: string;
-//   trigger_id: string;
-// }
 let games: { [name: string]: Game } = {};
 
 function removePlayer(player: string, userId: string) {
@@ -95,14 +82,8 @@ function formattedPlayers(players: string[]): string {
   return players.sort().map((player: string) => `<@${player}>`).join(", ");
 }
 
-http.createServer(function (request: http.IncomingMessage, response: http.ServerResponse) {
-  const { headers, method, url } = request;
-  let buffer: Buffer[] = [];
-  request.on('error', (err) => {
-    console.error(err);
-  }).on('data', (chunk: Buffer) => {
-    buffer.push(chunk);
-  }).on('end', () => {
+class Params {
+  public static fromBuffer(buffer: Buffer[]) {
     let body: string = '';
     let userId: string = '';
     Buffer.concat(buffer).toString().split("&").map((param: string) => {
@@ -122,6 +103,27 @@ http.createServer(function (request: http.IncomingMessage, response: http.Server
         players.push(userId);
       }
     })
+
+    return new Params({userId, players});
+  }
+
+  public readonly userId: string;
+  public readonly players: string[];
+
+  constructor(attrs: Params) {
+    Object.assign(this, attrs);
+  }
+}
+
+http.createServer(function (request: http.IncomingMessage, response: http.ServerResponse) {
+  const { headers, method, url } = request;
+  let buffer: Buffer[] = [];
+  request.on('error', (err) => {
+    console.error(err);
+  }).on('data', (chunk: Buffer) => {
+    buffer.push(chunk);
+  }).on('end', () => {
+    let { userId, players } = Params.fromBuffer(buffer);
 
     let j: { text: string, response_type?: string };
     if (games[userId]) {
