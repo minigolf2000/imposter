@@ -37,10 +37,7 @@ function removePlayer(player: string, userId: string) {
     const imposterWord = games[userId].imposterWord;
     games[userId] = undefined;
     return {
-      "text": [
-        `The imposter was defeated! <@${player}> was the imposter with the word *${imposterWord}*!`,
-        "> /imposter [@player1 @player2...] to start a new game"
-      ].join("\n")
+      "text": `The imposter was defeated! <@${player}> was the imposter with the word *${imposterWord}*!`
     }
   } else if (games[userId].villagers.indexOf(player) !== -1) {
     // Remove player
@@ -59,6 +56,7 @@ function removePlayer(player: string, userId: string) {
     // error, player not found
     return {
       "text": `Player ${player} is not currently playing this game!`,
+      "response_type": "ephemeral"
     }
   }
 }
@@ -75,16 +73,21 @@ function newGame(players: string[], userId: string) {
     imposterWord,
   };
 
+  const startingPlayerIndex = Math.floor(Math.random() * players.length);
+
   g.villagers.forEach((player: string, index: number) => {
-    Slack.sendWord(player, villagerWord, players);
+    Slack.sendWord(player, villagerWord, players, userId, startingPlayerIndex);
   })
-  Slack.sendWord(g.imposter, imposterWord, players);
+  Slack.sendWord(g.imposter, imposterWord, players, userId, startingPlayerIndex);
   Slack.usageHint(userId)
 
   games[userId] = g;
 
   return {
-    "text": `New Imposter game has begun! Words have been sent to: ${formattedPlayers(players)}!`,
+    "text": [
+      `<@${userId}> started a game of Imposter!`,
+      `Sending words to ${players.sort().map((player: string, i: number) => `<@${player}>${startingPlayerIndex === i ? " (goes first)" : ""}`).join(", ")}`,
+    ].join(" ")
   }
 }
 
@@ -120,16 +123,19 @@ http.createServer(function (request: http.IncomingMessage, response: http.Server
       }
     })
 
-    let j: { text: string };
+    let j: { text: string, response_type?: string };
     if (games[userId]) {
       if (players.length === 1) {
         console.log(`== ${userId} is removing player: ${players[0]}`)
         j = removePlayer(players[0], userId);
       } else {
-        // error while playing game
+        // Invalid request while game is playing
         j = {
-          "text": "Usage: [/imposter @player] to out a player as imposter. " +
-          `Players remaining: ${formattedPlayers([...games[userId].villagers, games[userId].imposter])}`,
+          "text": [
+            "Usage: `/imposter @player` to out a player as imposter.",
+            `Players remaining: ${formattedPlayers([...games[userId].villagers, games[userId].imposter])}`,
+          ].join(" "),
+          "response_type": "ephemeral",
         };
       }
     } else {

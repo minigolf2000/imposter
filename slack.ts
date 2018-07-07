@@ -18,12 +18,16 @@ interface postMessageResponse {
 export namespace Slack {
   const token = fs.readFileSync("slack_token", "utf8");
 
-  export function sendWord(user: string, word: string, players: string[]) {
-    slackIMUser(user, `Your word: ${word}. Playing with ${players.map((player: string) => `<@${player}>`)}`);
+  export function sendWord(user: string, word: string, players: string[], gameCreator: string, startingPlayerIndex: number) {
+    slackIMUser(user, [
+      `<@${gameCreator}> started a game of Imposter!`,
+      `Your word is *${word}*.`,
+      `Playing with ${players.sort().map((player: string, i: number) => `<@${player}>${startingPlayerIndex === i ? " (goes first)" : ""}`).join(", ")}`,
+    ].join(" "));
   }
 
   export function usageHint(user: string) {
-    slackIMUser(user, "You are the game maker! [/imposter @player] to out a player as imposter");
+    slackIMUser(user, "You are the game maker! `/imposter @player` to out a player as imposter");
   }
 
   function slackIMUser(user: string, message: string) {
