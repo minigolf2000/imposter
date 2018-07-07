@@ -15,7 +15,7 @@
         "ws": "^3.0.0"
     },
     "scripts": {
-        "start": "webpack --config webpack.config.js && node imposter.js",
-        "build": "webpack --config webpack.config.js --env=production"
+        "start": "tsc && node dist/imposter.js",
+        "build": "tsc"
     }
 }

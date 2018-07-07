@@ -1,11 +1,10 @@
 import * as http from 'http';
-import * as fs from 'fs';
+import { readFile } from 'fs';
 import { Slack } from './slack';
 
 let words: string[][];
-let path: string = 'words.json';
 
-fs.readFile("words.json", "utf8", (error, content) => {
+readFile("words.json", "utf8", (error, content) => {
   words = JSON.parse(content) as string[][];
 });
 
@@ -13,6 +12,8 @@ interface Game {
   id: string;
   villagers: string[];
   imposter: string;
+  villagerWord: string;
+  imposterWord: string;
   createdAt: number;
 }
 
@@ -31,41 +32,48 @@ interface Game {
 // }
 let games: { [name: string]: Game } = {};
 
-
-function kickPlayer(player: string, userId: string) {
+function removePlayer(player: string, userId: string) {
   if (player === games[userId].imposter) {
+    const imposterWord = games[userId].imposterWord;
     games[userId] = undefined;
     return {
-      "text": "The imposter was defeated!",
-      "attachments": [
-        {"text": "____ was the imposter with the word *___*"},
-        {"text": "/imposter [@player1 @player2...] to start a new game"}
-      ]
+      "text": [
+        `The imposter was defeated! <@${player}> was the imposter with the word *${imposterWord}*!`,
+        "> /imposter [@player1 @player2...] to start a new game"
+      ].join("\n")
     }
   } else if (games[userId].villagers.indexOf(player) !== -1) {
+    // Remove player
+    games[userId].villagers.splice(games[userId].villagers.indexOf(player), 1);
+    if (games[userId].villagers.length <= 1) {
+      const { imposter, imposterWord } = games[userId];
+      games[userId] = undefined;
+      return {
+        "text": `<@${player}> is not the imposter. The imposter <@${imposter}> has won the game with the word *${imposterWord}*!`,
+      }
+    }
     return {
-      "text": "The imposter remains!",
+      "text": `<@${player}> is not the imposter. The imposter remains! Players remaining: ${formattedPlayers([...games[userId].villagers, games[userId].imposter])}`,
     }
   } else {
     // error, player not found
     return {
-      "text": "This player is not in your game!",
+      "text": `Player ${player} is not currently playing this game!`,
     }
   }
 }
 
 function newGame(players: string[], userId: string) {
-  if (players.indexOf(userId) === -1) { players.push(userId); }
-
   const [villagerWord, imposterWord] = words[Math.floor(Math.random() * words.length)];
   const imposterIndex = Math.floor(Math.random() * players.length);
   let g: Game = {
     id: userId,
-    villagers: players,
+    villagers: players.filter((player: string, i: number) => i != imposterIndex),
     imposter: players[imposterIndex],
     createdAt: Date.now(),
+    villagerWord,
+    imposterWord,
   };
-  g.villagers.splice(imposterIndex, 1) // remove imposter from villagers list
 
   g.villagers.forEach((player: string, index: number) => {
     Slack.sendWord(player, villagerWord, players);
@@ -76,8 +84,12 @@ function newGame(players: string[], userId: string) {
   games[userId] = g;
 
   return {
-    "text": `New game started! I've sent words to: ${players.map((player: string) => `<@${player}>`)}!`,
+    "text": `New Imposter game has begun! Words have been sent to: ${formattedPlayers(players)}!`,
   }
+}
+
+function formattedPlayers(players: string[]): string {
+  return players.sort().map((player: string) => `<@${player}>`).join(", ");
 }
 
 http.createServer(function (request: http.IncomingMessage, response: http.ServerResponse) {
@@ -100,32 +112,44 @@ http.createServer(function (request: http.IncomingMessage, response: http.Server
       }
     })
 
-    
-    let users: string[] = [];
+    let players: string[] = [];
     body.split("+").forEach((s: string) => {
       if (s[0] === "<" && s[s.length - 1] === ">") {
         const userId = s.slice(s.indexOf("@") + 1, s.lastIndexOf("|") || s.lastIndexOf(">"))
-        users.push(userId);
+        players.push(userId);
       }
     })
 
-    users.push("U76JT0P0B") // add a fake user for testing LOL
-
-    console.log(users);
-
-    let j: { text: string, attachments?: {[text: string]: string }[] };
-    if (users.length === 1) {
-      j = kickPlayer(users[0], userId);
+    let j: { text: string };
+    if (games[userId]) {
+      if (players.length === 1) {
+        console.log(`== ${userId} is removing player: ${players[0]}`)
+        j = removePlayer(players[0], userId);
+      } else {
+        // error while playing game
+        j = {
+          "text": "Usage: [/imposter @player] to out a player as imposter. " +
+          `Players remaining: ${formattedPlayers([...games[userId].villagers, games[userId].imposter])}`,
+        };
+      }
     } else {
-      j = newGame(users, userId);
+      if (players.indexOf(userId) === -1) { players.push(userId); }
+      if (players.length < 3) {
+        j = {"text": "At least 3 players are needed to play Imposter!"};
+      } else {
+        console.log(`== ${userId} is creating a new game with players: ${players}`)
+        j = newGame(players, userId);
+      }
     }
 
-    console.log(buffer.toString())
-    response.setHeader('Access-Control-Allow-Origin', '*');
+    if (games[userId]) {
+      console.log("== Current game state:", JSON.stringify(games[userId]));
+    }
+    console.log();
     response.setHeader('Content-Type', 'application/json');
     response.writeHead(200);
     response.end(JSON.stringify({"response_type": "in_channel", ...j}), 'utf-8');
   });
-}).listen(1337, '127.0.0.1');
+}).listen(1337);
 
-console.log('Server running at http://127.0.0.1:1337/');
+console.log('Imposter Node Server running at http://127.0.0.1:1337/');
