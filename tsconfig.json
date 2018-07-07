@@ -7,7 +7,6 @@
         "outDir": "./dist"
     },
     "include": [
-        "server.ts",
-        "../lib/**/*"
+        "imposter.ts"
     ]
 }
