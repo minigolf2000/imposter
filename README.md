@@ -6,10 +6,9 @@ Then `/imposter @player` to out people as imposter during the game
 
 # Deployment
 ```bash
-# Make sure a file named `slack_token` exists that contains the slack app's
+# Make sure a file named `slack_token` exists that contains the slack app's token
 make deploy
 ```
-token
 
 # One-time Digital Ocean setup
 ```bash
