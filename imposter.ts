@@ -1,6 +1,58 @@
 import * as http from 'http';
 import { readFile } from 'fs';
+import * as express from 'express';
+import * as bodyParser from 'body-parser';
 import { Slack } from './slack';
+import { Game, Player } from './game';
+import { runInNewContext } from 'vm';
+
+// Request payload when user types command in chat
+interface CommandRequest {
+  token: string;
+  team_id: string;
+  team_domain: string;
+  channel_id: string;
+  channel_name: string;
+  user_id: string;
+  user_name: string;
+  command: string;
+  text: string;
+  response_url: string;
+  trigger_id: string;
+}
+
+// Request payload when user clicks a button or submits a
+interface ButtonClickRequest {
+  type: 'interactive_message';
+  actions: [
+    {
+      name: string;
+      type: 'button';
+      value: string;
+    }
+  ]
+  callback_id: string;
+  user: {id: string, name: string};
+  channel: {id: string, name: string};
+  team: {id: string, domain: string};
+  action_ts: string;
+  message_ts: string;
+  attachment_id: string;
+  token: string;
+  response_url: string;
+  original_message: string;
+}
+
+// Request payload when user submits their guess for the imposter word through the dialog
+interface DialogSubmitRequest {
+  type: 'dialog_submission';
+  submission: {imposter_word: string};
+  callback_id: string;
+  user: {id: string, name: string};
+  action_ts: string;
+  token: string;
+  response_url: string;
+}
 
 let words: string[][];
 
@@ -8,156 +60,84 @@ readFile("words.json", "utf8", (error, content) => {
   words = JSON.parse(content) as string[][];
 });
 
-interface Game {
-  id: string;
-  villagers: string[];
-  imposter: string;
-  villagerWord: string;
-  imposterWord: string;
-  createdAt: number;
-}
-
 let games: { [name: string]: Game } = {};
 
-function removePlayer(player: string, userId: string) {
-  if (player === games[userId].imposter) {
-    const imposterWord = games[userId].imposterWord;
-    games[userId] = undefined;
-    return {
-      "text": `The imposter was defeated! <@${player}> was the imposter with the word *${imposterWord}*!`
-    }
-  } else if (games[userId].villagers.indexOf(player) !== -1) {
-    // Remove player
-    games[userId].villagers.splice(games[userId].villagers.indexOf(player), 1);
-    if (games[userId].villagers.length <= 1) {
-      const { imposter, imposterWord } = games[userId];
-      games[userId] = undefined;
-      return {
-        "text": `<@${player}> is not the imposter. The imposter <@${imposter}> has won the game with the word *${imposterWord}*!`,
-      }
-    }
-    return {
-      "text": `<@${player}> is not the imposter. The imposter remains! Players remaining: ${formattedPlayers([...games[userId].villagers, games[userId].imposter])}`,
-    }
-  } else {
-    // error, player not found
-    return {
-      "text": `Player ${player} is not currently playing this game!`,
-      "response_type": "ephemeral"
-    }
-  }
-}
+const app = express();
+app.use(
+  bodyParser.urlencoded({ extended: true })
+).use((request: express.Request, response: express.Response, next: () => void) => {
+  response.setHeader('Content-Type', 'application/json');
+  next();
+}).post('/imposter', (request: express.Request, response: express.Response, next: () => void) => {
+  console.log(request.body);
+  const payload = request.body as CommandRequest;
+  const {token, user_id, text} = payload;
 
-function newGame(players: string[], userId: string) {
-  const [villagerWord, imposterWord] = words[Math.floor(Math.random() * words.length)];
-  const imposterIndex = Math.floor(Math.random() * players.length);
-  let g: Game = {
-    id: userId,
-    villagers: players.filter((player: string, i: number) => i != imposterIndex),
-    imposter: players[imposterIndex],
-    createdAt: Date.now(),
-    villagerWord,
-    imposterWord,
-  };
+  const [game, error] = Game.fromText(text, words, payload.channel_id);
 
-  const startingPlayerIndex = Math.floor(Math.random() * players.length);
+  response.writeHead(200); // Slack apps should always return 200 if they successfully received the request
 
-  g.villagers.forEach((player: string, index: number) => {
-    Slack.sendWord(player, villagerWord, players, userId, startingPlayerIndex);
-  })
-  Slack.sendWord(g.imposter, imposterWord, players, userId, startingPlayerIndex);
-  Slack.usageHint(userId)
-
-  games[userId] = g;
-
-  return {
-    "text": [
-      `<@${userId}> started a game of Imposter!`,
-      `Sending words to ${players.sort().map((player: string, i: number) => `<@${player}>${startingPlayerIndex === i ? " (goes first)" : ""}`).join(", ")}`,
-    ].join(" ")
-  }
-}
-
-function formattedPlayers(players: string[]): string {
-  return players.sort().map((player: string) => `<@${player}>`).join(", ");
-}
-
-class Params {
-  public static fromBuffer(buffer: Buffer[]) {
-    let body: string = '';
-    let userId: string = '';
-    Buffer.concat(buffer).toString().split("&").map((param: string) => {
-      const [k, v] = param.split("=")
-      if (k === "text") {
-        body = decodeURIComponent(v);
-      }
-      if (k === "user_id") {
-        userId = decodeURIComponent(v);
-      }
-    })
-
-    let players: string[] = [];
-    body.split("+").forEach((s: string) => {
-      if (s[0] === "<" && s[s.length - 1] === ">") {
-        const userId = s.slice(s.indexOf("@") + 1, s.lastIndexOf("|") || s.lastIndexOf(">"))
-        players.push(userId);
-      }
-    })
-
-    return new Params({userId, players});
+  if (error) {
+    response.end(JSON.stringify({"response_type": "ephemeral", "text": error}), 'utf-8');
+    return;
   }
 
-  public readonly userId: string;
-  public readonly players: string[];
+  games['only-game'] = game;
+  const newGameMessage = `<@${user_id}> started a game of Imposter with players <@${game.players}>!`
+  response.end(JSON.stringify({"response_type": "in_channel", "text": newGameMessage}), 'utf-8');
 
-  constructor(attrs: Params) {
-    Object.assign(this, attrs);
-  }
-}
+  next();
+}).post('/imposter/action', (request: express.Request, response: express.Response, next: () => void) => {
+  const p = JSON.parse(request.body.payload);
+  console.log(p);
+  if (p.type === 'interactive_message') {
+    const payload = p as ButtonClickRequest;
+    const game = games['only-game'];
+    game.addVote(payload.user.id, payload.actions[0].value); // Slack API returns actions as array, but is only ever length 1
 
-http.createServer(function (request: http.IncomingMessage, response: http.ServerResponse) {
-  const { headers, method, url } = request;
-  let buffer: Buffer[] = [];
-  request.on('error', (err) => {
-    console.error(err);
-  }).on('data', (chunk: Buffer) => {
-    buffer.push(chunk);
-  }).on('end', () => {
-    let { userId, players } = Params.fromBuffer(buffer);
+    const votes = game.votesAreTallied()
+    if (votes.length === 1) {
+      game.voteOff(votes[0]);
+    } else if (votes.length === 2) {
+      game.clearVotes();
+      // tiebreaker message
+    }
+  } else if (p.type === 'dialog_submission') {
+    const payload = p as DialogSubmitRequest;
+    const {token, type, user, submission} = payload;
 
-    let j: { text: string, response_type?: string };
-    if (games[userId]) {
-      if (players.length === 1) {
-        console.log(`== ${userId} is removing player: ${players[0]}`)
-        j = removePlayer(players[0], userId);
-      } else {
-        // Invalid request while game is playing
-        j = {
-          "text": [
-            "Usage: `/imposter @player` to out a player as imposter.",
-            `Players remaining: ${formattedPlayers([...games[userId].villagers, games[userId].imposter])}`,
-          ].join(" "),
-          "response_type": "ephemeral",
-        };
-      }
+    const game = games['only-game'];
+    if (game.players[game.imposterIndex].id !== payload.user.id) {
+      game.players[game.imposterIndex].isDead = true;
+      game.voteOff(payload.user.id);
+      response.end();
     } else {
-      if (players.indexOf(userId) === -1) { players.push(userId); }
-      if (players.length < 3) {
-        j = {"text": "At least 3 players are needed to play Imposter!"};
+      if (payload.submission.imposter_word.replace(/ /g,'').toLowerCase() === game.villagerWord.replace(/ /g,'').toLowerCase()) {
+        // send victory message
+        // Imposter win
+
+        const m = `<@${payload.user.id}> is not the imposter. The imposter <@${game.players[game.imposterIndex].id}> has won the game with the word *${game.imposterWord}*!`
+        response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
+        //"text": ,
       } else {
-        console.log(`== ${userId} is creating a new game with players: ${players}`)
-        j = newGame(players, userId);
+        // Imposter lose
+        game.voteOff(payload.user.id);
+        const m = `<@${payload.user.id}> is not the imposter. The imposter remains!`
+        game.clearVotes();
+        response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
       }
     }
+  }
 
-    if (games[userId]) {
-      console.log("== Current game state:", JSON.stringify(games[userId]));
-    }
-    console.log();
-    response.setHeader('Content-Type', 'application/json');
-    response.writeHead(200);
-    response.end(JSON.stringify({"response_type": "in_channel", ...j}), 'utf-8');
-  });
+  next();
+}).get('/imposter', (request: express.Request, response: express.Response, next: () => void) => {
+  response.end(JSON.stringify(games['only-game']), 'utf-8');
+}).use((request: express.Request, response: express.Response) => {
+  const game = games['only-game'];
+  game.players.forEach((p: Player) => {
+    Slack.refreshGameStatusMessageForPlayer(game, p);
+  })
+  console.log("== Current game state:", game);
 }).listen(1337);
 
 console.log('Imposter Node Server running at http://127.0.0.1:1337/');
