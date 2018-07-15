@@ -1,4 +1,4 @@
-import 'isomorphic-fetch';
+import Axios, * as axios from 'axios';
 import * as fs from 'fs';
 import { Game, Player } from './game';
 
@@ -7,13 +7,14 @@ interface imOpenResponse {
   "no_op": boolean;
   "already_open": boolean;
   "channel": {
-      "id": "D77H9VD47"
+    "id": "D77H9VD47"
   }
 }
 
 interface chatPostMessageResponse {
   "ok": boolean;
   "channel": string;
+  "ts": string;
 }
 
 const numberEmojis = [
@@ -25,42 +26,47 @@ const numberEmojis = [
 export namespace Slack {
   const token = fs.readFileSync("slack_token", "utf8");
 
-  export function refreshGameStatusMessageForPlayer(game: Game, player: Player) {
-    slackIMUser(game, player);
+  export function refreshGameStatusMessageForPlayer(game: Game, player: Player, message_ts?: string) {
+    slackIMUser(game, player, message_ts);
   }
 
-  function newGameMessage() {
-
-  }
-
-  function updateGameStatus() {
-
+  export function openDialog(gameId: string, userId: string, trigger_id: string) {
+    return postToSlack("dialog.open", {
+      "dialog": openDialogTemplate(gameId, userId),
+      "trigger_id": trigger_id
+    }).then((r: any) => {
+      console.log(r.data)
+      r.data.response_metadata.messages.forEach((element: any) => {
+        console.log(element);
+      });
+    }).catch((error) => { console.log(error); });
   }
 
   function openDialogTemplate(gameId: string, userId: string) {
     return {
       "callback_id": `${gameId}-${userId}`,
-      "title": "Make final guess",
+      "title": "I am the imposter",
       "submit_label": "Submit",
       "elements": [
-          {
-              "type": "text",
-              "label": "I am the imposter and I think the real word is",
-              "name": "imposter_word",
-              // "min_length": 1, does slack already do required check? if so don't need this
-              "hint": "I'm being useful"
-          }
+        {
+          "type": "text",
+          "label": "What is the real word?",
+          "name": "imposter_word",
+          // "hint": "no hint"
+        }
       ]
-    }
+    };
   }
 
-  function slackIMUser(game: Game, player: Player) {
-    postToSlack("im.open", {"user": player.id})
-    .then((resp: any) => resp.json()).then((r: imOpenResponse) => {
+  function slackIMUser(game: Game, player: Player, message_ts: string) {
+    return postToSlack("im.open", {"user": player.id})
+    .then((r: axios.AxiosResponse) => {
+      const j = r.data as imOpenResponse
       // console.log(`Opened IM connection for user ${user}: ${JSON.stringify(r)}`)
-      postToSlack("chat.postMessage", {
-        "channel": r.channel.id,
-        "text": `Your word is *${game.players[game.imposterIndex].id === player.id ? game.imposterWord : game.villagerWord}*. Turn order is ${game.players.map((player: Player) => `<@${player.id}>`).join(", ")}`,
+      postToSlack(message_ts ? "chat.update" : "chat.postMessage", {
+        "message_ts": message_ts,
+        "channel": j.channel.id,
+        "text": `Your word is *${game.players[game.imposterIndex].id === player.id ? game.imposterWord : game.villagerWord}*.`,
         "attachments": [
           {
             "fallback": "Who do you vote as the imposter?",
@@ -69,40 +75,44 @@ export namespace Slack {
             "color": "good",
             "attachment_type": "default",
             "text": game.players.map((p: Player, i: number) => `${numberEmojis[i]} <@${p.id}>`).join("\n\n"),
-            "actions": game.players.map((p: Player, i: number) => ({
+            "actions": [...game.players.map((p: Player, i: number) => ({
               "name": "vote",
               "text": numberEmojis[i],
               "type": "button",
               "value": p.id,
-            })),
+            })),{
+              "name": "accuse",
+              "text": "I am the imposter",
+              "type": "button",
+              "style": "danger",
+              "value": "accuse",
+            }],
           },
           {
-            "fallback": "Who do you vote as the imposter?",
-            "title": "Who do you vote as the imposter?",
             "color": "good",
             "attachment_type": "default",
-            "text": game.players.filter((p: Player) => !p.isDead).map((p: Player, i: number) => `${numberEmojis[i]} <@${p.id}>`).join("\n\n"),
+            "text": `(${game.players.filter((p: Player) => p.voteId).length} / ${game.players.filter((p: Player) => !p.isDead).length}) players have voted.`,
           },
         ]
-      })
-        .then((resp: Response) => resp.json()).then((r: chatPostMessageResponse) => {
-          console.log(`Successfully sent Slack PM to user ${player.id}`)
+      }).then((r: axios.AxiosResponse) => {
+          const j = r.data as chatPostMessageResponse
+          // TODO: fix this to not have janky side effects
+          player.message_ts = j.ts;
+
+          console.log(`Successfully sent Slack PM to user ${player.id} with ts ${j.ts}`)
         }).catch((error) => { console.log(error); });
     }).catch((error) => { console.log(error); });
   }
 
   function postToSlack(url: string, body: {}) {
-    return fetch(`https://slack.com/api/${url}`, {
-      method: "POST",
+    return Axios.request({
+      method: 'POST',
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Authorization": `Bearer ${token}`,
       },
-      body: JSON.stringify(body)
+      data: JSON.stringify(body),
+      url: `https://slack.com/api/${url}`,
     });
   }
-}
-
-function formattedPlayers(players: string[]): string {
-  return players.sort().map((player: string) => `<@${player}>`).join(", ");
 }

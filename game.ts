@@ -2,6 +2,7 @@ export interface Player {
   id: string;
   voteId: string;
   isDead: boolean;
+  message_ts: string;
 }
 
 const usageString = "`/imposter [villager-word imposter-word] [@player1 @player2 @player3...]` to start game";
@@ -28,6 +29,7 @@ export class Game {
           id: userId,
           voteId: '',
           isDead: false,
+          message_ts: '',
         });
       } else if (!villagerWord) {
         villagerWord = s;

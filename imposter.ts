@@ -37,6 +37,7 @@ interface ButtonClickRequest {
   team: {id: string, domain: string};
   action_ts: string;
   message_ts: string;
+  trigger_id: string;
   attachment_id: string;
   token: string;
   response_url: string;
@@ -83,17 +84,28 @@ app.use(
   }
 
   games['only-game'] = game;
-  const newGameMessage = `<@${user_id}> started a game of Imposter with players <@${game.players}>!`
+
+  const newGameMessage = `<@${user_id}> started a game of Imposter with players <@${game.players.map((p: Player) => `<@${p.id}>`).join(", ")}>!`
   response.end(JSON.stringify({"response_type": "in_channel", "text": newGameMessage}), 'utf-8');
 
-  next();
+
+  game.players.forEach((p: Player) => {
+    Slack.refreshGameStatusMessageForPlayer(game, p);
+  })
+  console.log("== Current game state:", game);
+
 }).post('/imposter/action', (request: express.Request, response: express.Response, next: () => void) => {
   const p = JSON.parse(request.body.payload);
   console.log(p);
   if (p.type === 'interactive_message') {
     const payload = p as ButtonClickRequest;
+    const action = p.actions[0]; // Slack API returns actions as array, but is only ever length 1
+    if (action.name === 'accuse') {
+      Slack.openDialog('only-game', payload.user.id, payload.trigger_id)
+      return;
+    }
     const game = games['only-game'];
-    game.addVote(payload.user.id, payload.actions[0].value); // Slack API returns actions as array, but is only ever length 1
+    game.addVote(payload.user.id, action.value);
 
     const votes = game.votesAreTallied()
     if (votes.length === 1) {
@@ -102,9 +114,13 @@ app.use(
       game.clearVotes();
       // tiebreaker message
     }
+
+    game.players.forEach((p: Player) => {
+      Slack.refreshGameStatusMessageForPlayer(game, p, payload.message_ts);
+    })
+    console.log("== Current game state:", game);
   } else if (p.type === 'dialog_submission') {
     const payload = p as DialogSubmitRequest;
-    const {token, type, user, submission} = payload;
 
     const game = games['only-game'];
     if (game.players[game.imposterIndex].id !== payload.user.id) {
@@ -127,17 +143,14 @@ app.use(
         response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
       }
     }
-  }
 
-  next();
+    game.players.forEach((p: Player) => {
+      Slack.refreshGameStatusMessageForPlayer(game, p, payload.action_ts);
+    })
+    console.log("== Current game state:", game);
+  }
 }).get('/imposter', (request: express.Request, response: express.Response, next: () => void) => {
   response.end(JSON.stringify(games['only-game']), 'utf-8');
-}).use((request: express.Request, response: express.Response) => {
-  const game = games['only-game'];
-  game.players.forEach((p: Player) => {
-    Slack.refreshGameStatusMessageForPlayer(game, p);
-  })
-  console.log("== Current game state:", game);
 }).listen(1337);
 
 console.log('Imposter Node Server running at http://127.0.0.1:1337/');
