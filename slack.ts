@@ -66,32 +66,39 @@ export namespace Slack {
       postToSlack(message_ts ? "chat.update" : "chat.postMessage", {
         "message_ts": message_ts,
         "channel": j.channel.id,
-        "text": `Your word is *${game.players[game.imposterIndex].id === player.id ? game.imposterWord : game.villagerWord}*.`,
+        "text":
+          "Take turns giving clues, then either:\n" +
+          "- vote who you think is the imposter\n" +
+          "- if you think you are the imposter, guess the real word\n" +
+          `Your word is *${game.players[game.imposterIndex].id === player.id ? game.imposterWord : game.villagerWord}*.\n`,
         "attachments": [
           {
-            "fallback": "Who do you vote as the imposter?",
-            "title": "Who do you vote as the imposter?",
+            "fallback": "Players",
+            "title": "Players\n",
             "callback_id": "vote",
             "color": "good",
             "attachment_type": "default",
-            "text": game.players.map((p: Player, i: number) => `${numberEmojis[i]} <@${p.id}>`).join("\n\n"),
-            "actions": [...game.players.map((p: Player, i: number) => ({
-              "name": "vote",
-              "text": numberEmojis[i],
-              "type": "button",
-              "value": p.id,
-            })),{
-              "name": "accuse",
-              "text": "I am the imposter",
-              "type": "button",
-              "style": "danger",
-              "value": "accuse",
-            }],
-          },
-          {
-            "color": "good",
-            "attachment_type": "default",
-            "text": `(${game.players.filter((p: Player) => p.voteId).length} / ${game.players.filter((p: Player) => !p.isDead).length}) players have voted.`,
+            "text": game.players.map((p: Player, i: number) => `${numberEmojis[i]} <@${p.id}>${p.id === player.id ? ' (you)' : ''}`).join("\n\n"),
+            "actions": game.players.map((p: Player, i: number) => {
+              if (p.id === player.id) {
+                return {
+                  "name": "accuse",
+                  "text": ":exclamation:" + numberEmojis[i] + ":exclamation:",
+                  "type": "button",
+                  "style": "danger",
+                  "value": "accuse",
+                };
+              }
+              else {
+                return {
+                  "name": "vote",
+                  "text": numberEmojis[i],
+                  "type": "button",
+                  "value": p.id,
+                }
+              }
+            }),
+            "footer": game.votesDisplayString(),
           },
         ]
       }).then((r: axios.AxiosResponse) => {

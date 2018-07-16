@@ -92,6 +92,12 @@ export class Game {
   clearVotes() {
     this.players.map((p: Player) => p.voteId = '');
   }
+
+  votesDisplayString() {
+    const numVotes = this.players.filter((p: Player) => p.voteId).length;
+    const numAlivePlayers = this.players.filter((p: Player) => !p.isDead).length
+    return `(${numVotes} / ${numAlivePlayers}) ${numVotes === 1 ? "player has" : "players have"} voted.`
+  }
 }
 
 

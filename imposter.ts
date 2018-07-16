@@ -85,7 +85,7 @@ app.use(
 
   games['only-game'] = game;
 
-  const newGameMessage = `<@${user_id}> started a game of Imposter with players <@${game.players.map((p: Player) => `<@${p.id}>`).join(", ")}>!`
+  const newGameMessage = `<@${user_id}> started a game of Imposter with players ${game.players.map((p: Player) => `<@${p.id}>`).join(", ")}!`
   response.end(JSON.stringify({"response_type": "in_channel", "text": newGameMessage}), 'utf-8');
 
 
@@ -126,19 +126,22 @@ app.use(
     if (game.players[game.imposterIndex].id !== payload.user.id) {
       game.players[game.imposterIndex].isDead = true;
       game.voteOff(payload.user.id);
-      response.end();
+      const m = `<@${payload.user.id}> is not the imposter. The imposter remains!`
+
+      // The imposter <@${game.players[game.imposterIndex].id}> has won the game with the word *${game.imposterWord}*!
+      response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
     } else {
       if (payload.submission.imposter_word.replace(/ /g,'').toLowerCase() === game.villagerWord.replace(/ /g,'').toLowerCase()) {
         // send victory message
         // Imposter win
 
-        const m = `<@${payload.user.id}> is not the imposter. The imposter <@${game.players[game.imposterIndex].id}> has won the game with the word *${game.imposterWord}*!`
+        const m = `<@${payload.user.id}> was the imposter and won by guessing *${payload.submission}*!`
         response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
         //"text": ,
       } else {
         // Imposter lose
         game.voteOff(payload.user.id);
-        const m = `<@${payload.user.id}> is not the imposter. The imposter remains!`
+        const m = `<@${payload.user.id}> was the imposter and lost by guessing *${payload.submission}*.`
         game.clearVotes();
         response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
       }
