@@ -95,11 +95,10 @@ app.use(
   console.log("== Current game state:", game);
 
 }).post('/imposter/action', (request: express.Request, response: express.Response, next: () => void) => {
-  const p = JSON.parse(request.body.payload);
-  console.log(p);
-  if (p.type === 'interactive_message') {
-    const payload = p as ButtonClickRequest;
-    const action = p.actions[0]; // Slack API returns actions as array, but is only ever length 1
+  const payload: ButtonClickRequest | DialogSubmitRequest = JSON.parse(request.body.payload);
+
+  if (payload.type === 'interactive_message') {
+    const action = payload.actions[0]; // Slack API returns actions as array, but is only ever length 1
     if (action.name === 'accuse') {
       Slack.openDialog('only-game', payload.user.id, payload.trigger_id)
       return;
@@ -119,9 +118,7 @@ app.use(
       Slack.refreshGameStatusMessageForPlayer(game, p, payload.message_ts);
     })
     console.log("== Current game state:", game);
-  } else if (p.type === 'dialog_submission') {
-    const payload = p as DialogSubmitRequest;
-
+  } else if (payload.type === 'dialog_submission') {
     const game = games['only-game'];
     if (game.players[game.imposterIndex].id !== payload.user.id) {
       game.players[game.imposterIndex].isDead = true;
