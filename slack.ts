@@ -24,7 +24,7 @@ const numberEmojis = [
 
 
 export namespace Slack {
-  const token = fs.readFileSync("slack_token", "utf8");
+  const token = fs.readFileSync("slack_token", "utf8").trim();
 
   export function refreshGameStatusMessageForPlayer(game: Game, player: Player, message_ts?: string) {
     slackIMUser(game, player, message_ts);
