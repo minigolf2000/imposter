@@ -83,7 +83,7 @@ export namespace Slack {
               if (p.id === player.id) {
                 return {
                   "name": "accuse",
-                  "text": ":exclamation:" + numberEmojis[i] + ":exclamation:",
+                  "text": numberEmojis[i],
                   "type": "button",
                   "style": "danger",
                   "value": "accuse",
