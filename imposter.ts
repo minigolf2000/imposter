@@ -87,17 +87,15 @@ app.use(
 
   const newGameMessage = `<@${user_id}> started a game of Imposter with players ${game.players.map((p: Player) => `<@${p.id}>`).join(", ")}!`
   response.end(JSON.stringify({"response_type": "in_channel", "text": newGameMessage}), 'utf-8');
-
-
   game.players.forEach((p: Player) => {
     Slack.refreshGameStatusMessageForPlayer(game, p);
   })
-  console.log("== Current game state:", game);
 
 }).post('/imposter/action', (request: express.Request, response: express.Response, next: () => void) => {
   const payload: ButtonClickRequest | DialogSubmitRequest = JSON.parse(request.body.payload);
 
   if (payload.type === 'interactive_message') {
+    console.log(payload);
     const action = payload.actions[0]; // Slack API returns actions as array, but is only ever length 1
     if (action.name === 'accuse') {
       Slack.openDialog('only-game', payload.user.id, payload.trigger_id)
@@ -115,10 +113,12 @@ app.use(
     }
 
     game.players.forEach((p: Player) => {
-      Slack.refreshGameStatusMessageForPlayer(game, p, payload.message_ts);
+      Slack.refreshGameStatusMessageForPlayer(game, p, p.message_ts);
     })
-    console.log("== Current game state:", game);
+    response.send('');
+
   } else if (payload.type === 'dialog_submission') {
+
     const game = games['only-game'];
     if (game.players[game.imposterIndex].id !== payload.user.id) {
       game.players[game.imposterIndex].isDead = true;
@@ -145,12 +145,12 @@ app.use(
     }
 
     game.players.forEach((p: Player) => {
-      Slack.refreshGameStatusMessageForPlayer(game, p, payload.action_ts);
+      Slack.refreshGameStatusMessageForPlayer(game, p, p.message_ts);
     })
-    console.log("== Current game state:", game);
+    response.send('');
   }
 }).get('/imposter', (request: express.Request, response: express.Response, next: () => void) => {
-  response.end(JSON.stringify(games['only-game']), 'utf-8');
+  response.end(JSON.stringify(games['only-game'] || {}), 'utf-8');
 }).listen(1337);
 
 console.log('Imposter Node Server running at http://127.0.0.1:1337/');
