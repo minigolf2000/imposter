@@ -96,7 +96,7 @@ export class Game {
   votesDisplayString() {
     const numVotes = this.players.filter((p: Player) => p.voteId).length;
     const numAlivePlayers = this.players.filter((p: Player) => !p.isDead).length
-    return `(${numVotes} / ${numAlivePlayers}) ${numVotes === 1 ? "player has" : "players have"} voted.`
+    return `(${numVotes} / ${numAlivePlayers}) players have voted.`
   }
 }
 

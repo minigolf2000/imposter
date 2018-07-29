@@ -32,26 +32,35 @@ export namespace Slack {
       "trigger_id": trigger_id
     }).then((r: any) => {
       console.log(r.data)
-      r.data.response_metadata.messages.forEach((element: any) => {
-        console.log(element);
-      });
+      if (r.data.response_metadata) {
+        r.data.response_metadata.messages.forEach((element: any) => {
+          console.log(element);
+        });
+      }
     }).catch((error) => { console.log(error); });
   }
 
   function openDialogTemplate(gameId: string, userId: string) {
     return {
       "callback_id": `${gameId}-${userId}`,
-      "title": "I am the imposter",
+      "title": "Imposter",
       "submit_label": "Submit",
       "elements": [
         {
           "type": "text",
-          "label": "What is the real word?",
+          "label": "Guess the real word.",
           "name": "imposter_word",
           // "hint": "no hint"
         }
       ]
     };
+  }
+
+  export function publicStatusMessage(game: Game, text: string) {
+    postToSlack("chat.postMessage", {
+      "channel": game.channelId,
+      "text": text
+    });
   }
 
   export function refreshGameStatusMessageForPlayer(game: Game, player: Player, message_ts?: string) {
@@ -74,7 +83,14 @@ export namespace Slack {
             "callback_id": "vote",
             "color": "good",
             "attachment_type": "default",
-            "text": game.players.map((p: Player, i: number) => `${numberEmojis[i]} <@${p.id}>${p.id === player.id ? ' (you)' : ''}`).join("\n\n"),
+            "text": game.players.map((p: Player, i: number) => {
+              if (p.id === player.id) {
+                return `${numberEmojis[i]} *<@${p.id}>*`;
+              } else if (p.id === player.voteId) {
+                return `${numberEmojis[i]} <@${p.id}> (you voted)`
+              }
+              return `${numberEmojis[i]} <@${p.id}>`;
+            }).join("\n\n"),
             "actions": game.players.map((p: Player, i: number) =>
               (p.id === player.id) ?
                 {

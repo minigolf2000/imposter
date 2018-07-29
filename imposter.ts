@@ -118,36 +118,30 @@ app.use(
     response.send('');
 
   } else if (payload.type === 'dialog_submission') {
-
+    console.log(payload);
     const game = games['only-game'];
+    let responseText = '';
+    response.send('');
     if (game.players[game.imposterIndex].id !== payload.user.id) {
       game.players[game.imposterIndex].isDead = true;
       game.voteOff(payload.user.id);
-      const m = `<@${payload.user.id}> is not the imposter. The imposter remains!`
+      responseText = `<@${payload.user.id}> guessed the word *${payload.submission.imposter_word}* but is not the imposter. The imposter remains!`
 
       // The imposter <@${game.players[game.imposterIndex].id}> has won the game with the word *${game.imposterWord}*!
-      response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
     } else {
       if (payload.submission.imposter_word.replace(/ /g,'').toLowerCase() === game.villagerWord.replace(/ /g,'').toLowerCase()) {
-        // send victory message
-        // Imposter win
-
-        const m = `<@${payload.user.id}> was the imposter and won by guessing *${payload.submission}*!`
-        response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
-        //"text": ,
+        responseText = `<@${payload.user.id}> guessed the word *${payload.submission}* and is the imposter. The imposter wins!`
       } else {
-        // Imposter lose
         game.voteOff(payload.user.id);
-        const m = `<@${payload.user.id}> was the imposter and lost by guessing *${payload.submission}*.`
+        responseText = `<@${payload.user.id}> guessed the word *${payload.submission}* and was the imposter. The imposter loses!`
         game.clearVotes();
-        response.end(JSON.stringify({"response_type": "in_channel", "text": m}), 'utf-8');
       }
     }
 
     game.players.forEach((p: Player) => {
       Slack.refreshGameStatusMessageForPlayer(game, p, p.message_ts);
     })
-    response.send('');
+    Slack.publicStatusMessage(game, responseText);
   }
 }).get('/imposter', (request: express.Request, response: express.Response, next: () => void) => {
   response.end(JSON.stringify(games['only-game'] || {}), 'utf-8');
