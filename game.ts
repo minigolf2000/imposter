@@ -62,6 +62,10 @@ export class Game {
     }), ""];
   }
 
+  alivePlayers() {
+    return this.players.filter((p: Player) => !p.isDead);
+  }
+
   votesAreTallied() {
     let votesAreTallied = true;
     let voteCounts: {[votee: string]: number } = {};

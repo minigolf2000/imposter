@@ -27,7 +27,7 @@ export namespace Slack {
   const token = fs.readFileSync("slack_token", "utf8").trim();
 
   export function openDialog(gameId: string, userId: string, trigger_id: string) {
-    return postToSlack("dialog.open", {
+    return call("dialog.open", {
       "dialog": openDialogTemplate(gameId, userId),
       "trigger_id": trigger_id
     }).then((r: any) => {
@@ -56,25 +56,54 @@ export namespace Slack {
     };
   }
 
+  export function pmPlayerReplaceUIWithText(game: Game, player: Player, text:string) {
+    return call("im.open", {"user": player.id})
+    .then((r: axios.AxiosResponse) => {
+      const j = r.data as imOpenResponse
+      call("chat.delete", {
+        "ts": player.message_ts,
+        "channel": j.channel.id,
+      })
+      call("chat.postMessage", {
+        "channel": j.channel.id,
+        "text": text,
+      });
+    });
+
+    // Slack API docs say I can pass "attachments": [] to delete old attachments, but it does not work lol
+    // If Slack API supports this, then can replace this function with:
+    //
+    // return call("im.open", {"user": player.id})
+    // .then((r: axios.AxiosResponse) => {
+    //   const j = r.data as imOpenResponse
+    //   call("chat.update", {
+    //     "ts": player.message_ts,
+    //     "channel": j.channel.id,
+    //     "text": text,
+    //     "attachments": []
+    //   });
+    // });
+  }
+
   export function publicStatusMessage(game: Game, text: string) {
-    postToSlack("chat.postMessage", {
+    call("chat.postMessage", {
       "channel": game.channelId,
       "text": text
     });
   }
 
   export function refreshGameStatusMessageForPlayer(game: Game, player: Player, message_ts?: string) {
-    return postToSlack("im.open", {"user": player.id})
+    return call("im.open", {"user": player.id})
     .then((r: axios.AxiosResponse) => {
       const j = r.data as imOpenResponse
       // console.log(`Opened IM connection for user ${user}: ${JSON.stringify(r)}`)
-      postToSlack(message_ts ? "chat.update" : "chat.postMessage", {
+      call(message_ts ? "chat.update" : "chat.postMessage", {
         "ts": message_ts,
         "channel": j.channel.id,
         "text":
-          "Take turns giving clues, then either:\n" +
-          "- vote who you think is the imposter\n" +
-          "- if you think you are the imposter, guess the real word\n" +
+          "Take turns giving clues, then either: " +
+          "vote who you think is the imposter or " +
+          "if you think you are the imposter, guess the real word\n" +
           `Your word is *${game.players[game.imposterIndex].id === player.id ? game.imposterWord : game.villagerWord}*.\n`,
         "attachments": [
           {
@@ -83,22 +112,22 @@ export namespace Slack {
             "callback_id": "vote",
             "color": "good",
             "attachment_type": "default",
-            "text": game.players.map((p: Player, i: number) => {
+            "text": game.alivePlayers().map((p: Player, i: number) => {
               if (p.id === player.id) {
                 return `${numberEmojis[i]} *<@${p.id}>*`;
               } else if (p.id === player.voteId) {
-                return `${numberEmojis[i]} <@${p.id}> (you voted)`
+                return `${numberEmojis[i]} <@${p.id}> (your vote)`
               }
               return `${numberEmojis[i]} <@${p.id}>`;
             }).join("\n\n"),
-            "actions": game.players.map((p: Player, i: number) =>
+            "actions": game.alivePlayers().map((p: Player, i: number) =>
               (p.id === player.id) ?
                 {
-                  "name": "accuse",
+                  "name": "dialog_open",
                   "text": numberEmojis[i],
                   "type": "button",
                   "style": "danger",
-                  "value": "accuse",
+                  "value": "dialog_open",
                 } : {
                   "name": "vote",
                   "text": numberEmojis[i],
@@ -121,7 +150,7 @@ export namespace Slack {
     }).catch((error) => { console.log(error); });
   }
 
-  function postToSlack(url: string, body: {}) {
+  function call(url: string, body: {}) {
     console.log(`  Posting to ${url}`)
     return Axios.request({
       method: 'POST',

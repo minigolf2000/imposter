@@ -87,7 +87,7 @@ app.use(
 
   const newGameMessage = `<@${user_id}> started a game of Imposter with players ${game.players.map((p: Player) => `<@${p.id}>`).join(", ")}!`
   response.end(JSON.stringify({"response_type": "in_channel", "text": newGameMessage}), 'utf-8');
-  game.players.forEach((p: Player) => {
+  game.alivePlayers().forEach((p: Player) => {
     Slack.refreshGameStatusMessageForPlayer(game, p);
   })
 
@@ -97,7 +97,7 @@ app.use(
   if (payload.type === 'interactive_message') {
     console.log(payload);
     const action = payload.actions[0]; // Slack API returns actions as array, but is only ever length 1
-    if (action.name === 'accuse') {
+    if (action.name === 'dialog_open') {
       Slack.openDialog('only-game', payload.user.id, payload.trigger_id)
       return;
     }
@@ -112,7 +112,7 @@ app.use(
       // tiebreaker message
     }
 
-    game.players.forEach((p: Player) => {
+    game.alivePlayers().forEach((p: Player) => {
       Slack.refreshGameStatusMessageForPlayer(game, p, p.message_ts);
     })
     response.send('');
@@ -120,25 +120,28 @@ app.use(
   } else if (payload.type === 'dialog_submission') {
     console.log(payload);
     const game = games['only-game'];
-    let responseText = '';
     response.send('');
-    if (game.players[game.imposterIndex].id !== payload.user.id) {
-      game.players[game.imposterIndex].isDead = true;
-      game.voteOff(payload.user.id);
-      responseText = `<@${payload.user.id}> guessed the word *${payload.submission.imposter_word}* but is not the imposter. The imposter remains!`
+    let responseText = '';
 
-      // The imposter <@${game.players[game.imposterIndex].id}> has won the game with the word *${game.imposterWord}*!
-    } else {
+    const player = game.alivePlayers().filter((p: Player) => p.id === payload.user.id)[0];
+    if (game.players[game.imposterIndex].id === payload.user.id) {
       if (payload.submission.imposter_word.replace(/ /g,'').toLowerCase() === game.villagerWord.replace(/ /g,'').toLowerCase()) {
-        responseText = `<@${payload.user.id}> guessed the word *${payload.submission}* and is the imposter. The imposter wins!`
+        responseText = `<@${payload.user.id}> guessed the word *${payload.submission.imposter_word}* and is the imposter. The imposter wins!`
+        Slack.pmPlayerReplaceUIWithText(game, player, `You are the imposter and correctly guessed *${game.villagerWord}*. The imposter wins!`)
       } else {
+        responseText = `<@${payload.user.id}> guessed the word *${payload.submission.imposter_word}* and was the imposter. The imposter loses!`
         game.voteOff(payload.user.id);
-        responseText = `<@${payload.user.id}> guessed the word *${payload.submission}* and was the imposter. The imposter loses!`
+        Slack.pmPlayerReplaceUIWithText(game, player, `You guessed the word *${payload.submission.imposter_word}* and you were the imposter. The word was *${game.villagerWord}*. The imposter loses!`)
         game.clearVotes();
       }
+    } else {
+      responseText = `<@${payload.user.id}> guessed the word *${payload.submission.imposter_word}* but is not the imposter. The imposter remains!`
+      game.players[game.imposterIndex].isDead = true;
+      game.voteOff(payload.user.id);
+      Slack.pmPlayerReplaceUIWithText(game, player, `You guessed the word *${payload.submission.imposter_word}* but you are not the imposter. The imposter remains!`)
     }
 
-    game.players.forEach((p: Player) => {
+    game.alivePlayers().forEach((p: Player) => {
       Slack.refreshGameStatusMessageForPlayer(game, p, p.message_ts);
     })
     Slack.publicStatusMessage(game, responseText);
