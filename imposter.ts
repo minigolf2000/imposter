@@ -104,12 +104,15 @@ app.use(
     const game = games['only-game'];
     game.addVote(payload.user.id, action.value);
 
-    const votes = game.votesAreTallied()
-    if (votes.length === 1) {
-      game.voteOff(votes[0]);
-    } else if (votes.length === 2) {
-      game.clearVotes();
-      // tiebreaker message
+    if (game.everyoneHasVoted()) {
+      const talliedVotes = game.tallyVotes()
+      if (talliedVotes.votees.length === 1) {
+        Slack.publicStatusMessage(game, `<@${talliedVotes.votees[0]}> has been voted off with ${talliedVotes.count}! The imposter remains! Start the next round.`);
+        game.voteOff(talliedVotes.votees[0]);
+      } else {
+        Slack.publicStatusMessage(game, `${talliedVotes.votees.map((id: string) => `<@${id}>`).join(", ")} are tied with ${talliedVotes.count} vote${talliedVotes.count !== 1 ? 's' : ''} each! Voted players must clue-off, then redo voting for this round.`);
+        game.clearVotes();
+      }
     }
 
     game.alivePlayers().forEach((p: Player) => {

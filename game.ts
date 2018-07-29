@@ -5,6 +5,11 @@ export interface Player {
   message_ts: string;
 }
 
+interface TalliedVotes {
+  votees: string[];
+  count: number;
+}
+
 const usageString = "`/imposter [villager-word imposter-word] [@player1 @player2 @player3...]` to start game";
 
 export class Game {
@@ -66,22 +71,23 @@ export class Game {
     return this.players.filter((p: Player) => !p.isDead);
   }
 
-  votesAreTallied() {
-    let votesAreTallied = true;
-    let voteCounts: {[votee: string]: number } = {};
-    this.players.filter((p: Player) => !p.isDead).map((p: Player) => {
-      if (!p.voteId) {
-        votesAreTallied = false;
-      }
+  everyoneHasVoted() {
+    return this.alivePlayers().every((p: Player) => p.voteId !== "");
+  }
+
+  tallyVotes() {
+    let mostVotesCount = 0;
+    let voteCounts: {[votee: string]: number} = {};
+    this.alivePlayers().forEach((p: Player) => {
+      voteCounts[p.voteId] = voteCounts[p.voteId] || 0;
       voteCounts[p.voteId]++;
+      mostVotesCount = Math.max(voteCounts[p.voteId], mostVotesCount);
     })
 
-    if (!votesAreTallied) {
-      return [];
-    }
-
-    const mostVotes = Object.keys(voteCounts).map((k: string) => voteCounts[k]).sort()[0];
-    return Object.keys(voteCounts).filter((k: string) => voteCounts[k] === mostVotes);
+    return {
+      votees: Object.keys(voteCounts).filter((id: string) => voteCounts[id] === mostVotesCount),
+      count: mostVotesCount,
+    };
   }
 
   addVote(voter: string, votee: string) {
@@ -91,6 +97,10 @@ export class Game {
   voteOff(playerId: string) {
     this.players.filter((p: Player) => p.id === playerId).map((p: Player) => p.isDead = true);
     this.clearVotes();
+  }
+
+  isOver() {
+    return this.alivePlayers().length <= 2 || this.players[this.imposterIndex].isDead;
   }
 
   clearVotes() {
