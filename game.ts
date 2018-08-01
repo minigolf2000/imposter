@@ -107,6 +107,10 @@ export class Game {
     this.players.map((p: Player) => p.voteId = '');
   }
 
+  guessIsCorrect(guess: string) {
+    return guess.replace(/ /g,'').toLowerCase() === this.villagerWord.replace(/ /g,'').toLowerCase();
+  }
+
   votesDisplayString() {
     const numVotes = this.players.filter((p: Player) => p.voteId).length;
     const numAlivePlayers = this.players.filter((p: Player) => !p.isDead).length

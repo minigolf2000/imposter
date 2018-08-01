@@ -56,7 +56,7 @@ export namespace Slack {
     };
   }
 
-  export function pmPlayerReplaceUIWithText(game: Game, player: Player, text:string) {
+  export function pmPlayerReplaceUIWithText(game: Game, player: Player, text: string) {
     return call("im.open", {"user": player.id})
     .then((r: axios.AxiosResponse) => {
       const j = r.data as imOpenResponse

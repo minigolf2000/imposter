@@ -38,7 +38,6 @@ interface ButtonClickRequest {
   action_ts: string;
   message_ts: string;
   trigger_id: string;
-  attachment_id: string;
   token: string;
   response_url: string;
   original_message: string;
@@ -62,6 +61,19 @@ readFile("words.json", "utf8", (error, content) => {
 });
 
 let games: { [name: string]: Game } = {};
+
+function refreshGameStatusMessages(game: Game) {
+  game.alivePlayers().forEach((p: Player) => {
+    if (game.isOver()) {
+      Slack.pmPlayerReplaceUIWithText(game, p, "Game is over!");
+    } else {
+      Slack.refreshGameStatusMessageForPlayer(game, p);
+    }
+  })
+  if (game.isOver()) {
+    delete games['only-game'];
+  }
+}
 
 const app = express();
 app.use(
@@ -87,9 +99,7 @@ app.use(
 
   const newGameMessage = `<@${user_id}> started a game of Imposter with players ${game.players.map((p: Player) => `<@${p.id}>`).join(", ")}!`
   response.end(JSON.stringify({"response_type": "in_channel", "text": newGameMessage}), 'utf-8');
-  game.alivePlayers().forEach((p: Player) => {
-    Slack.refreshGameStatusMessageForPlayer(game, p);
-  })
+  refreshGameStatusMessages(game);
 
 }).post('/imposter/action', (request: express.Request, response: express.Response, next: () => void) => {
   const payload: ButtonClickRequest | DialogSubmitRequest = JSON.parse(request.body.payload);
@@ -107,7 +117,7 @@ app.use(
     if (game.everyoneHasVoted()) {
       const talliedVotes = game.tallyVotes()
       if (talliedVotes.votees.length === 1) {
-        Slack.publicStatusMessage(game, `<@${talliedVotes.votees[0]}> has been voted off with ${talliedVotes.count}! The imposter remains! Start the next round.`);
+        Slack.publicStatusMessage(game, `<@${talliedVotes.votees[0]}> has been voted off with ${talliedVotes.count} votes! The imposter remains!`);
         game.voteOff(talliedVotes.votees[0]);
       } else {
         Slack.publicStatusMessage(game, `${talliedVotes.votees.map((id: string) => `<@${id}>`).join(", ")} are tied with ${talliedVotes.count} vote${talliedVotes.count !== 1 ? 's' : ''} each! Voted players must clue-off, then redo voting for this round.`);
@@ -115,10 +125,8 @@ app.use(
       }
     }
 
-    game.alivePlayers().forEach((p: Player) => {
-      Slack.refreshGameStatusMessageForPlayer(game, p, p.message_ts);
-    })
     response.send('');
+    refreshGameStatusMessages(game);
 
   } else if (payload.type === 'dialog_submission') {
     console.log(payload);
@@ -128,7 +136,7 @@ app.use(
 
     const player = game.alivePlayers().filter((p: Player) => p.id === payload.user.id)[0];
     if (game.players[game.imposterIndex].id === payload.user.id) {
-      if (payload.submission.imposter_word.replace(/ /g,'').toLowerCase() === game.villagerWord.replace(/ /g,'').toLowerCase()) {
+      if (game.guessIsCorrect(payload.submission.imposter_word)) {
         responseText = `<@${payload.user.id}> guessed the word *${payload.submission.imposter_word}* and is the imposter. The imposter wins!`
         Slack.pmPlayerReplaceUIWithText(game, player, `You are the imposter and correctly guessed *${game.villagerWord}*. The imposter wins!`)
       } else {
@@ -144,10 +152,8 @@ app.use(
       Slack.pmPlayerReplaceUIWithText(game, player, `You guessed the word *${payload.submission.imposter_word}* but you are not the imposter. The imposter remains!`)
     }
 
-    game.alivePlayers().forEach((p: Player) => {
-      Slack.refreshGameStatusMessageForPlayer(game, p, p.message_ts);
-    })
     Slack.publicStatusMessage(game, responseText);
+    refreshGameStatusMessages(game);
   }
 }).get('/imposter', (request: express.Request, response: express.Response, next: () => void) => {
   response.end(JSON.stringify(games['only-game'] || {}), 'utf-8');
