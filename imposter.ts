@@ -49,6 +49,8 @@ interface DialogSubmitRequest {
   submission: {imposter_word: string};
   callback_id: string;
   user: {id: string, name: string};
+  channel: {id: string, name: string};
+  team: {id: string, domain: string};
   action_ts: string;
   token: string;
   response_url: string;
@@ -86,6 +88,8 @@ app.use(
   const payload = request.body as CommandRequest;
   const {token, user_id, text} = payload;
 
+  const key = Game.getKey(payload.team_id, payload.channel_id, payload.user_id)
+
   const [game, error] = Game.fromText(text, words, payload.channel_id);
 
   response.writeHead(200); // Slack apps should always return 200 if they successfully received the request
@@ -95,7 +99,7 @@ app.use(
     return;
   }
 
-  games['only-game'] = game;
+  games[key] = game;
 
   const newGameMessage = `<@${user_id}> started a game of Imposter with players ${game.players.map((p: Player) => `<@${p.id}>`).join(", ")}!`
   response.end(JSON.stringify({"response_type": "in_channel", "text": newGameMessage}), 'utf-8');
@@ -106,12 +110,13 @@ app.use(
 
   if (payload.type === 'interactive_message') {
     console.log(payload);
+    const key = Game.getKey(payload.team.id, payload.channel.id, payload.user.id)
     const action = payload.actions[0]; // Slack API returns actions as array, but is only ever length 1
     if (action.name === 'dialog_open') {
-      Slack.openDialog('only-game', payload.user.id, payload.trigger_id)
+      Slack.openDialog(key, payload.user.id, payload.trigger_id)
       return;
     }
-    const game = games['only-game'];
+    const game = games[key];
     game.addVote(payload.user.id, action.value);
 
     if (game.everyoneHasVoted()) {
@@ -130,7 +135,8 @@ app.use(
 
   } else if (payload.type === 'dialog_submission') {
     console.log(payload);
-    const game = games['only-game'];
+    const key = Game.getKey(payload.team.id, payload.channel.id, payload.user.id)
+    const game = games[key];
     response.send('');
     let responseText = '';
 
@@ -156,7 +162,7 @@ app.use(
     refreshGameStatusMessages(game);
   }
 }).get('/imposter', (request: express.Request, response: express.Response, next: () => void) => {
-  response.end(JSON.stringify(games['only-game'] || {}), 'utf-8');
+  response.end(JSON.stringify(games || {}), 'utf-8');
 }).listen(1337);
 
 console.log('Imposter Node Server running at http://127.0.0.1:1337/');

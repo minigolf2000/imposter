@@ -67,6 +67,10 @@ export class Game {
     }), ""];
   }
 
+  public static getKey(teamId: string, channelId: string, userId: string) {
+    return `${teamId}-${channelId}-${userId}`;
+  }
+
   alivePlayers() {
     return this.players.filter((p: Player) => !p.isDead);
   }
